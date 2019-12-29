@@ -1,0 +1,200 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "armvmsType": {
+      "type": "string",
+      "defaultValue": "Standard_LRS",
+      "allowedValues": [
+        "Standard_LRS",
+        "Standard_ZRS",
+        "Standard_GRS",
+        "Standard_RAGRS",
+        "Premium_LRS"
+      ]
+    },
+    "arm-vm-1Name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "arm-vm-1AdminUserName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "arm-vm-1AdminPassword": {
+      "type": "securestring"
+    },
+    "arm-vm-1WindowsOSVersion": {
+      "type": "string",
+      "defaultValue": "2012-R2-Datacenter",
+      "allowedValues": [
+        "2008-R2-SP1",
+        "2012-Datacenter",
+        "2012-R2-Datacenter",
+        "Windows-Server-Technical-Preview"
+      ]
+    },
+    "arm-vm-1-pipDnsName": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "variables": {
+    "armvm-vnetPrefix": "10.0.0.0/16",
+    "armvm-vnetSubnet1Name": "Subnet-1",
+    "armvm-vnetSubnet1Prefix": "10.0.0.0/24",
+    "armvm-vnetSubnet2Name": "Subnet-2",
+    "armvm-vnetSubnet2Prefix": "10.0.1.0/24",
+    "armvmsName": "[concat('armvms', uniqueString(resourceGroup().id))]",
+    "arm-vm-1ImagePublisher": "MicrosoftWindowsServer",
+    "arm-vm-1ImageOffer": "WindowsServer",
+    "arm-vm-1OSDiskName": "arm-vm-1OSDisk",
+    "arm-vm-1VmSize": "Standard_D2_v2",
+    "arm-vm-1VnetID": "[resourceId('Microsoft.Network/virtualNetworks', 'armvm-vnet')]",
+    "arm-vm-1SubnetRef": "[concat(variables('arm-vm-1VnetID'), '/subnets/', variables('armvm-vnetSubnet1Name'))]",
+    "arm-vm-1StorageAccountName": "[concat(uniquestring(resourceGroup().id), 'armvm')]",
+    "arm-vm-1NicName": "[concat(parameters('arm-vm-1Name'), 'NetworkInterface')]",
+    "arm-vm-1-pipName": "arm-vm-1-pip"
+  },
+  "resources": [
+    {
+      "name": "armvm-vnet",
+      "type": "Microsoft.Network/virtualNetworks",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [],
+      "tags": {
+        "displayName": "armvm-vnet"
+      },
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "[variables('armvm-vnetPrefix')]"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('armvm-vnetSubnet1Name')]",
+            "properties": {
+              "addressPrefix": "[variables('armvm-vnetSubnet1Prefix')]"
+            }
+          },
+          {
+            "name": "[variables('armvm-vnetSubnet2Name')]",
+            "properties": {
+              "addressPrefix": "[variables('armvm-vnetSubnet2Prefix')]"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[variables('arm-vm-1StorageAccountName')]",
+      "type": "Microsoft.Storage/storageAccounts",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-01-01",
+      "sku": {
+        "name": "[parameters('armvmsType')]"
+      },
+      "dependsOn": [],
+      "tags": {
+        "displayName": "armvms"
+      },
+      "kind": "Storage"
+    },
+    {
+      "name": "[variables('arm-vm-1NicName')]",
+      "type": "Microsoft.Network/networkInterfaces",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', 'armvm-vnet')]",
+        "[resourceId('Microsoft.Network/publicIPAddresses', variables('arm-vm-1-pipName'))]"
+      ],
+      "tags": {
+        "displayName": "arm-vm-1Nic"
+      },
+      "properties": {
+        "ipConfigurations": [
+          {
+            "name": "ipconfig1",
+            "properties": {
+              "privateIPAllocationMethod": "Dynamic",
+              "subnet": {
+                "id": "[variables('arm-vm-1SubnetRef')]"
+              },
+              "publicIPAddress": {
+                "id": "[resourceId('Microsoft.Network/publicIPAddresses', variables('arm-vm-1-pipName'))]"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "[parameters('arm-vm-1Name')]",
+      "type": "Microsoft.Compute/virtualMachines",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2018-10-01",
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/networkInterfaces/', variables('arm-vm-1NicName'))]"
+      ],
+      "tags": {
+        "displayName": "arm-vm-1"
+      },
+      "properties": {
+        "hardwareProfile": {
+          "vmSize": "[variables('arm-vm-1VmSize')]"
+        },
+        "osProfile": {
+          "computerName": "[parameters('arm-vm-1Name')]",
+          "adminUsername": "[parameters('arm-vm-1AdminUsername')]",
+          "adminPassword": "[parameters('arm-vm-1AdminPassword')]"
+        },
+        "storageProfile": {
+          "imageReference": {
+            "publisher": "[variables('arm-vm-1ImagePublisher')]",
+            "offer": "[variables('arm-vm-1ImageOffer')]",
+            "sku": "[parameters('arm-vm-1WindowsOSVersion')]",
+            "version": "latest"
+          },
+          "osDisk": {
+            "name": "arm-vm-1OSDisk",
+            "createOption": "FromImage",
+            "caching": "ReadWrite"
+          }
+        },
+        "networkProfile": {
+          "networkInterfaces": [
+            {
+              "id": "[resourceId('Microsoft.Network/networkInterfaces/', variables('arm-vm-1NicName'))]"
+            }
+          ]
+        },
+        "diagnosticsProfile": {
+          "bootDiagnostics": {
+            "enabled": true,
+            "storageUri": "[reference(resourceId('Microsoft.Storage/storageAccounts/', variables('arm-vm-1StorageAccountName'))).primaryEndpoints.blob]"
+          }
+        }
+      }
+    },
+    {
+      "name": "[variables('arm-vm-1-pipName')]",
+      "type": "Microsoft.Network/publicIPAddresses",
+      "location": "[resourceGroup().location]",
+      "apiVersion": "2016-03-30",
+      "dependsOn": [],
+      "tags": {
+        "displayName": "arm-vm-1-pip"
+      },
+      "properties": {
+        "publicIPAllocationMethod": "Dynamic",
+        "dnsSettings": {
+          "domainNameLabel": "[parameters('arm-vm-1-pipDnsName')]"
+        }
+      }
+    }
+  ],
+  "outputs": {}
+}
